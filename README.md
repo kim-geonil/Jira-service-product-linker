@@ -1,39 +1,74 @@
-# Forge Hello World
+# Jira 서비스 제품 연결 (Forge)
 
-This project contains a Forge app written in Javascript that displays `Hello World!` in a Jira issue panel. 
+Jira 이슈에서 **고객사 → Deal → 장비(제품 이슈)**를 고르고, 현재 이슈에 **제품 링크**와 **연결된 Deal(고객사 링크)**을 한 번에 만드는 [Atlassian Forge](https://developer.atlassian.com/platform/forge/) 앱입니다.
 
-See [developer.atlassian.com/platform/forge/](https://developer.atlassian.com/platform/forge) for documentation and tutorials explaining Forge.
+## 기능 요약
 
-## Requirements
+- 이슈에 저장된 **고객사** 정보를 바탕으로 같은 프로젝트의 **Deal(마이그레이션 이슈 타입)** 목록을 불러옵니다.
+- Deal을 선택하면 그 Deal에 연결된 **장비(제품) 이슈** 목록을 보여 줍니다.
+- 여러 Deal에서 장비를 골라 **누적 선택**할 수 있으며, 링크 생성 시 **선택된 Deal마다** `연결된 Deal` 관계가 생성됩니다.
+- 이미 링크된 제품·Deal은 건너뛰고, 결과를 메시지로 요약합니다.
 
-See [Set up Forge](https://developer.atlassian.com/platform/forge/set-up-forge/) for instructions to get set up.
+## 모듈
 
-## Quick start
+| 항목 | 내용 |
+|------|------|
+| 진입점 | Jira 이슈 액션 — **「서비스 제품 연결」** (`manifest.yml`의 `jira:issueAction`) |
+| UI | Custom UI — `src/frontend` (React + webpack 번들) |
+| 백엔드 | Resolver — `src/resolvers/index.js` |
 
-- Modify your app frontend by editing the `src/frontend/index.jsx` file.
+## 필요 환경
 
-- Modify your app backend by editing the `src/resolvers/index.js` file to define resolver functions. See [Forge resolvers](https://developer.atlassian.com/platform/forge/runtime-reference/custom-ui-resolver/) for documentation on resolver functions.
+- [Forge CLI](https://developer.atlassian.com/platform/forge/set-up-forge/) 및 Atlassian 계정
+- Node.js (프로젝트는 `nodejs24.x` 런타임 사용)
 
-- Build and deploy your app by running:
+## 로컬 설정
+
+```bash
+npm install
+npm run build
 ```
+
+`src/frontend/build/`는 `.gitignore`에 포함되어 있어 **저장소를 clone한 뒤에는 반드시 `npm run build`를 한 번 실행**해야 합니다. 배포·터널 전에도 번들이 없으면 동일하게 빌드하세요.
+
+## 배포 및 설치
+
+프로젝트 루트에서:
+
+```bash
 forge deploy
-```
-
-- Install your app in an Atlassian site by running:
-```
 forge install
 ```
 
-- Develop your app by running `forge tunnel` to proxy invocations locally:
-```
+스코프나 권한을 `manifest.yml`에서 바꾼 뒤에는 **재배포 후 `forge install --upgrade`**가 필요할 수 있습니다. 자세한 절차는 [Forge 배포 문서](https://developer.atlassian.com/platform/forge/deploying/)를 참고하세요.
+
+## 개발 (터널)
+
+```bash
 forge tunnel
 ```
 
-### Notes
-- Use the `forge deploy` command when you want to persist code changes.
-- Use the `forge install` command when you want to install the app on a new site.
-- Once the app is installed on a site, the site picks up the new app changes you deploy without needing to rerun the install command.
+코드만 수정한 경우 터널이 핫 리로드하는 경우가 많고, **`manifest.yml`을 바꾼 경우에는 재배포 후 터널을 다시 시작**해야 합니다.
 
-## Support
+## 주요 디렉터리
 
-See [Get help](https://developer.atlassian.com/platform/forge/get-help/) for how to get help and provide feedback.
+| 경로 | 설명 |
+|------|------|
+| `manifest.yml` | 앱 ID, 모듈, 권한 스코프 |
+| `src/frontend/index.jsx` | 이슈 액션 UI (고객사·Deal·장비 선택, 링크 생성) |
+| `src/resolvers/index.js` | Jira REST 호출 및 `createLinks` 등 resolver |
+| `webpack.config.js` | 번들 출력 경로: `src/frontend/build/` |
+
+## 권한 (스코프)
+
+현재 manifest 기준:
+
+- `read:jira-work`
+- `write:jira-work`
+
+추가 API를 쓰게 되면 스코프를 늘리고 재배포·재설치해야 합니다.
+
+## 문의 및 참고
+
+- [Forge 개발자 허브](https://developer.atlassian.com/platform/forge/)
+- [Forge 도움말](https://developer.atlassian.com/platform/forge/get-help/)
