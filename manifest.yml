@@ -1,0 +1,24 @@
+modules:
+  jira:issueAction:
+    - key: service-product-action
+      title: 서비스 제품 연결
+      resource: main
+      resolver:
+        function: resolver
+      viewportSize: large    # ← 추가!
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: src/frontend
+app:
+  runtime:
+    name: nodejs24.x
+    memoryMB: 256
+    architecture: arm64
+  id: ari:cloud:ecosystem::app/a15b6def-67da-4af0-b82c-24e6ae750e2e
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
