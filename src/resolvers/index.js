@@ -3,7 +3,7 @@ import api, { route } from '@forge/api';
 
 const resolver = new Resolver();
 
-const FIELD_CUSTOMER = 'customfield_10087';
+const FIELD_CUSTOMER_NAME = '고객사';
 const FIELD_SERIAL   = 'customfield_10100';
 const FIELD_HOSTNAME = 'customfield_10102';
 const FIELD_ALIAS    = 'customfield_10597';
@@ -15,6 +15,10 @@ const WORK_LINK_TYPE = '업무 연결';
 const WORK_LINK_OUTWARD_LABEL = '업무를 참조함';
 const CUSTOMER_LINK_TYPE = '고객사 링크';
 const CUSTOMER_LINK_OUTWARD_LABEL = '연결된 Deal';
+const MIN_TEXT_SEARCH_LENGTH = 2;
+const MAX_TEXT_SEARCH_RESULTS = 200;
+
+let customerFieldIdCache = null;
 
 function normalizeLinkLabel(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
@@ -24,12 +28,60 @@ function escapeJqlString(value) {
     return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
+function normalizeIssueKeys(keys) {
+    return [...new Set((Array.isArray(keys) ? keys : [])
+        .map(key => String(key || '').trim())
+        .filter(Boolean))];
+}
+
+function quoteJqlList(values) {
+    return values.map(value => `"${escapeJqlString(value)}"`).join(',');
+}
+
+async function getCustomerFieldId() {
+    if (customerFieldIdCache) {
+        return customerFieldIdCache;
+    }
+
+    const response = await api.asUser().requestJira(route`/rest/api/3/field`);
+    if (!response.ok) {
+        const body = await response.text();
+        console.error('getCustomerFieldId Jira error:', response.status, body);
+        return null;
+    }
+
+    const fields = await response.json();
+    const candidates = (Array.isArray(fields) ? fields : [])
+        .filter(field =>
+            field?.name === FIELD_CUSTOMER_NAME ||
+            field?.untranslatedName === FIELD_CUSTOMER_NAME
+        );
+
+    if (candidates.length === 0) {
+        console.error(`getCustomerFieldId error: "${FIELD_CUSTOMER_NAME}" field not found`);
+        return null;
+    }
+
+    if (candidates.length > 1) {
+        console.log('getCustomerFieldId candidates:', JSON.stringify(
+            candidates.map(field => ({ id: field.id, name: field.name, untranslatedName: field.untranslatedName }))
+        ));
+    }
+
+    customerFieldIdCache = candidates[0].id;
+    console.log('getCustomerFieldId resolved:', JSON.stringify({
+        name: FIELD_CUSTOMER_NAME,
+        id: customerFieldIdCache
+    }));
+    return customerFieldIdCache;
+}
+
 /**
  * Collects human-readable customer names from a Jira custom field value into a Set.
  * Handles string, array of strings/objects, and single select-style objects.
  * Used when scanning many Deal issues for the autocomplete list.
  *
- * @param {unknown} c - Raw value from issue.fields[FIELD_CUSTOMER]
+ * @param {unknown} c - Raw customer field value from Jira issue fields
  * @param {Set<string>} outSet - Set to add names into
  */
 function collectCustomerNamesFromFieldValue(c, outSet) {
@@ -58,7 +110,7 @@ function collectCustomerNamesFromFieldValue(c, outSet) {
  * Returns a single customer name for the current issue (for pre-filling the picker).
  * Mirrors previous getIssueInfo behavior and extends array fields to use the first entry.
  *
- * @param {unknown} c - Raw value from issue.fields[FIELD_CUSTOMER]
+ * @param {unknown} c - Raw customer field value from Jira issue fields
  * @returns {string|null}
  */
 function getPrimaryCustomerNameForIssue(c) {
@@ -139,6 +191,10 @@ resolver.define('getCustomers', async ({ payload } = {}) => {
             console.error('getCustomers error: projectKey is required');
             return [];
         }
+        const customerFieldId = await getCustomerFieldId();
+        if (!customerFieldId) {
+            return [];
+        }
         const safeProjectKey = escapeJqlString(projectKey);
         const response = await api.asUser().requestJira(
             route`/rest/api/3/search/jql`,
@@ -147,18 +203,23 @@ resolver.define('getCustomers', async ({ payload } = {}) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     // pre-sales, post-sales 둘 다
-                    jql: `project = "${safeProjectKey}" AND issuetype = "Deal (migrated)" AND status in ("pre-sales", "post-sales")`,
+                    jql: `project = "${safeProjectKey}" AND status in ("pre-sales", "post-sales")`,
                     maxResults: 500,
-                    fields: [FIELD_CUSTOMER]
+                    fields: [customerFieldId]
                 })
             }
         );
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('getCustomers Jira error:', response.status, body);
+            return [];
+        }
         const data = await response.json();
 
-        const issues = data.issues || [];
+        const issues = Array.isArray(data.issues) ? data.issues : [];
         const customers = new Set();
         issues.forEach(i => {
-            collectCustomerNamesFromFieldValue(i.fields[FIELD_CUSTOMER], customers);
+            collectCustomerNamesFromFieldValue(i.fields?.[customerFieldId], customers);
         });
 
         console.log('최종 고객사 목록:', JSON.stringify([...customers]));
@@ -177,6 +238,10 @@ resolver.define('getDeals', async ({ payload }) => {
             console.error('getDeals error: customer and projectKey are required');
             return [];
         }
+        const customerFieldId = await getCustomerFieldId();
+        if (!customerFieldId) {
+            return [];
+        }
         const safeCustomer = escapeJqlString(customer);
         const safeProjectKey = escapeJqlString(projectKey);
         const response = await api.asUser().requestJira(
@@ -186,20 +251,25 @@ resolver.define('getDeals', async ({ payload }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     // pre-sales, post-sales 둘 다
-                    jql: `project = "${safeProjectKey}" AND issuetype = "Deal (migrated)" AND status in ("pre-sales", "post-sales") AND ${FIELD_CUSTOMER} = "${safeCustomer}" ORDER BY summary ASC`,
+                    jql: `project = "${safeProjectKey}" AND status in ("pre-sales", "post-sales") AND ${customerFieldId} = "${safeCustomer}" ORDER BY summary ASC`,
                     maxResults: 100,
-                    fields: ['summary', FIELD_CUSTOMER, 'status']
+                    fields: ['summary', customerFieldId, 'status']
                 })
             }
         );
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('getDeals Jira error:', response.status, body);
+            return [];
+        }
         const data = await response.json();
         console.log('getDeals:', JSON.stringify(data).substring(0, 300));
 
-        const issues = data.issues || [];
+        const issues = Array.isArray(data.issues) ? data.issues : [];
         return issues.map(i => ({
             key:     i.key,
-            summary: i.fields.summary || '-',
-            status:  i.fields.status?.name || '-'
+            summary: i.fields?.summary || '-',
+            status:  i.fields?.status?.name || '-'
         }));
     } catch (e) {
         console.error('getDeals error:', e.message);
@@ -211,9 +281,15 @@ resolver.define('getDeals', async ({ payload }) => {
 resolver.define('getDealProducts', async ({ payload }) => {
     try {
         const { dealKey } = payload;
+        const customerFieldId = await getCustomerFieldId();
         const response = await api.asUser().requestJira(
             route`/rest/api/3/issue/${dealKey}?fields=issuelinks`
         );
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('getDealProducts issue Jira error:', response.status, body);
+            return [];
+        }
         const data = await response.json();
 
         const issuelinks = data.fields?.issuelinks || [];
@@ -233,15 +309,20 @@ resolver.define('getDealProducts', async ({ payload }) => {
                 body: JSON.stringify({
                     jql: `key in (${productKeys.join(',')})`,
                     maxResults: 200,
-                    fields: ['summary', FIELD_SERIAL, FIELD_HOSTNAME, FIELD_ALIAS, FIELD_CUSTOMER]
+                    fields: ['summary', FIELD_SERIAL, FIELD_HOSTNAME, FIELD_ALIAS, customerFieldId].filter(Boolean)
                 })
             }
         );
+        if (!prodResponse.ok) {
+            const body = await prodResponse.text();
+            console.error('getDealProducts search Jira error:', prodResponse.status, body);
+            return [];
+        }
         const prodData = await prodResponse.json();
-        const prodIssues = prodData.issues || [];
+        const prodIssues = Array.isArray(prodData.issues) ? prodData.issues : [];
 
         return prodIssues.map(i => {
-            const c = i.fields[FIELD_CUSTOMER];
+            const c = customerFieldId ? i.fields?.[customerFieldId] : null;
             let customerName = '-';
             if (typeof c === 'string') customerName = c;
             else if (c?.value) customerName = c.value;
@@ -249,16 +330,55 @@ resolver.define('getDealProducts', async ({ payload }) => {
 
             return {
                 key:      i.key,
-                summary:  i.fields.summary || '-',
+                summary:  i.fields?.summary || '-',
                 customer: customerName,
-                serial:   i.fields[FIELD_SERIAL]   || '-',
-                hostname: i.fields[FIELD_HOSTNAME] || '-',
-                alias:    i.fields[FIELD_ALIAS]    || '-',
+                serial:   i.fields?.[FIELD_SERIAL]   || '-',
+                hostname: i.fields?.[FIELD_HOSTNAME] || '-',
+                alias:    i.fields?.[FIELD_ALIAS]    || '-',
             };
         });
     } catch (e) {
         console.error('getDealProducts error:', e.message);
         return [];
+    }
+});
+
+// 3-1. 이미 로드된 장비 이슈 범위 안에서 Jira 상세 텍스트 검색
+resolver.define('searchProductsByText', async ({ payload } = {}) => {
+    try {
+        const query = String(payload?.query || '').trim();
+        const productKeys = normalizeIssueKeys(payload?.productKeys);
+
+        if (query.length < MIN_TEXT_SEARCH_LENGTH || productKeys.length === 0) {
+            return { keys: [] };
+        }
+
+        const response = await api.asUser().requestJira(
+            route`/rest/api/3/search/jql`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jql: `key in (${quoteJqlList(productKeys)}) AND text ~ "${escapeJqlString(query)}"`,
+                    maxResults: Math.min(productKeys.length, MAX_TEXT_SEARCH_RESULTS),
+                    fields: []
+                })
+            }
+        );
+
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('searchProductsByText Jira error:', response.status, body);
+            return { keys: [], error: body || `Jira search failed (${response.status})` };
+        }
+
+        const data = await response.json();
+        return {
+            keys: (data.issues || []).map(issue => issue.key).filter(Boolean)
+        };
+    } catch (e) {
+        console.error('searchProductsByText error:', e.message);
+        return { keys: [], error: e.message };
     }
 });
 
@@ -269,13 +389,26 @@ resolver.define('getDealProducts', async ({ payload }) => {
 resolver.define('getIssueBootstrap', async ({ payload }) => {
     try {
         const { issueKey } = payload;
-        const response = await api.asUser().requestJira(
-            route`/rest/api/3/issue/${issueKey}?fields=issuelinks,${FIELD_CUSTOMER},project`
-        );
+        const customerFieldId = await getCustomerFieldId();
+        const response = customerFieldId
+            ? await api.asUser().requestJira(
+                route`/rest/api/3/issue/${issueKey}?fields=issuelinks,${customerFieldId},project`
+            )
+            : await api.asUser().requestJira(
+                route`/rest/api/3/issue/${issueKey}?fields=issuelinks,project`
+            );
+        if (!response.ok) {
+            const body = await response.text();
+            console.error('getIssueBootstrap Jira error:', response.status, body);
+            return {
+                linkedKeys: [],
+                issueInfo: { customer: null, projectKey: null, projectName: null }
+            };
+        }
         const data = await response.json();
         const issuelinks = data.fields?.issuelinks || [];
         const linkedKeys = extractProductKeysFromIssueLinks(issuelinks);
-        const c = data.fields?.[FIELD_CUSTOMER];
+        const c = customerFieldId ? data.fields?.[customerFieldId] : null;
         const customer = getPrimaryCustomerNameForIssue(c);
 
         return {
