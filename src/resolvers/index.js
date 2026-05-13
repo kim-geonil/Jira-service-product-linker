@@ -9,10 +9,9 @@ const FIELD_HOSTNAME = 'customfield_10102';
 const FIELD_ALIAS    = 'customfield_10597';
 const FIELD_STATUS   = 'customfield_10596';
 
-/** Jira issue link type name used for service product links (same as UI / createLinks). */
-const PRODUCT_LINK_TYPE = '제품 링크 (migrated)';
-const WORK_LINK_TYPE = '업무 연결';
-const WORK_LINK_OUTWARD_LABEL = '업무를 참조함';
+/** New links are created with the production link type; migrated links are still recognized for lookup. */
+const PRODUCT_LINK_TYPE = '제품 링크';
+const PRODUCT_LINK_TYPES = ['제품 링크', '제품 링크 (migrated)'];
 const CUSTOMER_LINK_TYPE = '고객사 링크';
 const CUSTOMER_LINK_OUTWARD_LABEL = '연결된 Deal';
 const MIN_TEXT_SEARCH_LENGTH = 2;
@@ -141,14 +140,14 @@ function getPrimaryCustomerNameForIssue(c) {
  */
 function extractProductKeysFromIssueLinks(issuelinks) {
     return (issuelinks || [])
-        .filter(l => normalizeLinkLabel(l.type?.name) === PRODUCT_LINK_TYPE)
+        .filter(l => PRODUCT_LINK_TYPES.includes(normalizeLinkLabel(l.type?.name)))
         .map(l => l.outwardIssue?.key || l.inwardIssue?.key)
         .filter(Boolean);
 }
 
 /**
- * Linked issue keys shown under a Deal's product list. This intentionally includes
- * old Jira work links whose outward label is displayed as "업무를 참조함".
+ * Product issue keys shown under a Deal's product list.
+ * Only product link types are accepted so generic work links do not pull in tasks.
  *
  * @param {Array<{ type?: { name?: string, outward?: string }, outwardIssue?: { key?: string }, inwardIssue?: { key?: string } }>} issuelinks
  * @returns {string[]}
@@ -157,9 +156,7 @@ function extractDealLinkedIssueKeysFromIssueLinks(issuelinks) {
     const keys = (issuelinks || [])
         .filter(l => {
             const typeName = normalizeLinkLabel(l.type?.name);
-            const outwardLabel = normalizeLinkLabel(l.type?.outward);
-            return typeName === PRODUCT_LINK_TYPE ||
-                (typeName === WORK_LINK_TYPE && outwardLabel === WORK_LINK_OUTWARD_LABEL);
+            return PRODUCT_LINK_TYPES.includes(typeName);
         })
         .map(l => l.outwardIssue?.key || l.inwardIssue?.key)
         .filter(Boolean);

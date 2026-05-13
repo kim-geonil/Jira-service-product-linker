@@ -406,6 +406,31 @@ function App() {
         visibleSelectableProducts.every(p => checked.has(p.key));
     const productSearchActive = normalizedProductSearch !== '';
     const currentStep = selDeal ? 3 : selCustomer ? 2 : 1;
+    const stepItems = [
+        {
+            label: '고객사 선택',
+            activeHint: '고객사를 검색해 선택하세요',
+            doneHint: '완료됨',
+            pendingHint: '먼저 진행'
+        },
+        {
+            label: 'Deal 선택',
+            activeHint: 'Deal을 선택하세요',
+            doneHint: '완료됨',
+            pendingHint: '다음 단계'
+        },
+        {
+            label: '장비 선택',
+            activeHint: '연결할 장비를 선택하세요',
+            doneHint: '선택 중',
+            pendingHint: '다음 단계'
+        }
+    ];
+    const stepHelp = currentStep === 1
+        ? '고객사를 선택하면 관련 Deal 목록을 불러옵니다.'
+        : currentStep === 2
+            ? 'Deal을 선택하면 연결 가능한 장비 목록을 불러옵니다.'
+            : '장비를 선택한 뒤 하단의 링크 생성을 누르세요.';
     const footerHelp = linking
         ? '현재 이슈에 링크를 생성하고 있습니다.'
         : checked.size > 0
@@ -426,8 +451,39 @@ function App() {
         },
         title:       { fontSize: '16px', fontWeight: '600', marginBottom: '16px', color: '#172b4d', borderBottom: '2px solid #0052cc', paddingBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
         main:        { flex: 1 },
-        stepBar:     { display: 'flex', gap: '8px', marginBottom: '16px' },
-        stepItem:    (active, done) => ({ flex: 1, padding: '8px 10px', borderRadius: '4px', border: `1px solid ${active || done ? '#0052cc' : '#dfe1e6'}`, background: active ? '#deebff' : done ? '#f0f4ff' : 'white', color: active || done ? '#0052cc' : '#6b778c', fontSize: '12px', fontWeight: active ? '700' : '500' }),
+        stepBar:     { display: 'flex', gap: '8px', marginBottom: '8px' },
+        stepItem:    (active, done) => ({
+            flex: 1,
+            minHeight: '58px',
+            padding: '9px 10px',
+            borderRadius: '6px',
+            border: `${active ? 2 : 1}px solid ${active ? '#0052cc' : done ? '#36b37e' : '#dfe1e6'}`,
+            background: active ? '#deebff' : done ? '#e3fcef' : '#fafbfc',
+            color: active ? '#0747a6' : done ? '#0f6e56' : '#6b778c',
+            fontSize: '12px',
+            fontWeight: active ? '700' : '600',
+            boxSizing: 'border-box',
+            boxShadow: active ? '0 0 0 3px rgba(0, 82, 204, 0.18)' : 'none',
+            animation: active ? 'currentStepPulse 1.35s ease-in-out infinite' : 'none'
+        }),
+        stepTop:     { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '6px' },
+        stepLabel:   { display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 },
+        stepNumber:  (active, done) => ({
+            width: '20px',
+            height: '20px',
+            borderRadius: '50%',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            background: done ? '#36b37e' : active ? '#0052cc' : '#dfe1e6',
+            color: done || active ? 'white' : '#6b778c',
+            fontSize: '11px',
+            fontWeight: '700'
+        }),
+        stepBadge:   { flexShrink: 0, padding: '2px 6px', borderRadius: '10px', background: 'white', color: '#0052cc', fontSize: '10px', fontWeight: '700', border: '1px solid #b3d4ff', animation: 'currentBadgePulse 1.35s ease-in-out infinite' },
+        stepHint:    { fontSize: '11px', fontWeight: '500', color: 'inherit', opacity: 0.9, paddingLeft: '26px' },
+        stepHelp:    { fontSize: '12px', color: '#42526e', marginBottom: '16px', padding: '8px 10px', borderRadius: '4px', background: '#f4f5f7' },
         label:       { fontSize: '11px', color: '#6b778c', marginBottom: '4px', display: 'block', fontWeight: '500' },
         input:       { width: '100%', padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', boxSizing: 'border-box', marginBottom: '4px' },
         dropdown:    { border: '1px solid #ccc', borderRadius: '4px', background: 'white', maxHeight: '220px', overflowY: 'auto', marginBottom: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' },
@@ -469,6 +525,37 @@ function App() {
 
     return (
         <div style={S.wrap}>
+            <style>
+                {`
+                @keyframes currentStepPulse {
+                    0% {
+                        box-shadow: 0 0 0 2px rgba(0, 82, 204, 0.22), 0 0 0 0 rgba(0, 82, 204, 0.45);
+                        transform: translateY(0);
+                    }
+                    50% {
+                        box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.18), 0 0 0 9px rgba(0, 82, 204, 0.12);
+                        transform: translateY(-1px);
+                    }
+                    100% {
+                        box-shadow: 0 0 0 2px rgba(0, 82, 204, 0.22), 0 0 0 0 rgba(0, 82, 204, 0);
+                        transform: translateY(0);
+                    }
+                }
+                @keyframes currentBadgePulse {
+                    0%, 100% {
+                        background: #ffffff;
+                        box-shadow: 0 0 0 0 rgba(0, 82, 204, 0.32);
+                    }
+                    50% {
+                        background: #f0f4ff;
+                        box-shadow: 0 0 0 4px rgba(0, 82, 204, 0.12);
+                    }
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+                }
+                `}
+            </style>
             <main style={S.main}>
                 <div style={S.title}>
                     <span>🔗 서비스 제품 연결</span>
@@ -476,17 +563,27 @@ function App() {
                 </div>
 
                 <div style={S.stepBar}>
-                    {['고객사 선택', 'Deal 선택', '장비 선택'].map((label, index) => {
+                    {stepItems.map((item, index) => {
                         const step = index + 1;
                         const done = currentStep > step;
                         const active = currentStep === step;
                         return (
-                            <div key={label} style={S.stepItem(active, done)}>
-                                {done ? '✓' : step}. {label}
+                            <div key={item.label} style={S.stepItem(active, done)}>
+                                <div style={S.stepTop}>
+                                    <div style={S.stepLabel}>
+                                        <span style={S.stepNumber(active, done)}>{done ? '✓' : step}</span>
+                                        <span>{item.label}</span>
+                                    </div>
+                                    {active && <span style={S.stepBadge}>현재</span>}
+                                </div>
+                                <div style={S.stepHint}>
+                                    {active ? item.activeHint : done ? item.doneHint : item.pendingHint}
+                                </div>
                             </div>
                         );
                     })}
                 </div>
+                <div style={S.stepHelp}>{stepHelp}</div>
 
                 {/* 고객사 자동완성 */}
                 <label style={S.label}>
